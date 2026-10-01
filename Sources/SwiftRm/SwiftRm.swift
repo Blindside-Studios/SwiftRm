@@ -25,10 +25,11 @@ public class SwiftRm {
 }
 
 public struct SwiftRmSession: @unchecked Sendable {
-    public var fetchMetadata: (String) async throws -> RmItem
-    public var fetchIndex: (String) async throws -> [RmIndexEntry]
-    public var fetchBlobText: (String) async throws -> String
-    public var downloadBlob: (String) async throws -> Data
+    // Blob fetches take (hash, filename); the filename is sent as the rm-filename header.
+    public var fetchMetadata: (String, String) async throws -> RmItem
+    public var fetchIndex: (String, String) async throws -> [RmIndexEntry]
+    public var fetchBlobText: (String, String) async throws -> String
+    public var downloadBlob: (String, String) async throws -> Data
     public var deleteSomething: (String) async throws -> Void
     public var moveItem: (String, String) async throws -> Void
     public var uploadDocument: (String, Data, String) async throws -> Void
@@ -38,10 +39,10 @@ public struct SwiftRmSession: @unchecked Sendable {
     public var fetchItem: (RmIndexEntry) async throws -> RmItem?
 
     public init(
-        fetchMetadata: @escaping (String) async throws -> RmItem,
-        fetchIndex: @escaping (String) async throws -> [RmIndexEntry],
-        fetchBlobText: @escaping (String) async throws -> String,
-        downloadBlob: @escaping (String) async throws -> Data,
+        fetchMetadata: @escaping (String, String) async throws -> RmItem,
+        fetchIndex: @escaping (String, String) async throws -> [RmIndexEntry],
+        fetchBlobText: @escaping (String, String) async throws -> String,
+        downloadBlob: @escaping (String, String) async throws -> Data,
         deleteSomething: @escaping (String) async throws -> Void,
         moveItem: @escaping (String, String) async throws -> Void,
         uploadDocument: @escaping (String, Data, String) async throws -> Void,

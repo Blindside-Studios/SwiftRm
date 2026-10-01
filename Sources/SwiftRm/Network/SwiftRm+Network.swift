@@ -10,18 +10,19 @@ import CryptoKit
 
 struct SwiftRmNetwork{
 
-    private static func rawData(_ path: String, userToken: SwiftRmToken, method: String = "GET") async throws -> (Data, HTTPURLResponse) {
+    private static func rawData(_ path: String, userToken: SwiftRmToken, method: String = "GET", filename: String? = nil) async throws -> (Data, HTTPURLResponse) {
         let token = try await userToken.validToken()
         var request = URLRequest(url: URL(string: path)!)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let filename { request.setValue(filename, forHTTPHeaderField: "rm-filename") }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SwiftRmError.invalidResponse }
         return (data, http)
     }
 
-    public static func request<T: Decodable>(_ path: String, userToken: SwiftRmToken, method: String = "GET") async throws -> T {
-        let (data, http) = try await rawData(path, userToken: userToken, method: method)
+    public static func request<T: Decodable>(_ path: String, userToken: SwiftRmToken, method: String = "GET", filename: String? = nil) async throws -> T {
+        let (data, http) = try await rawData(path, userToken: userToken, method: method, filename: filename)
         guard http.statusCode == 200 else {
             let body = String(data: data, encoding: .utf8) ?? "<binary>"
             Log.msg("request FAILED: \(method) \(path.suffix(40)) → HTTP \(http.statusCode) body: \(body)", level: .error)
@@ -30,14 +31,14 @@ struct SwiftRmNetwork{
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    public static func requestText(_ path: String, userToken: SwiftRmToken) async throws -> String {
-        let (data, http) = try await rawData(path, userToken: userToken)
+    public static func requestText(_ path: String, userToken: SwiftRmToken, filename: String? = nil) async throws -> String {
+        let (data, http) = try await rawData(path, userToken: userToken, filename: filename)
         guard http.statusCode == 200 else { throw SwiftRmError.invalidResponse }
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    public static func requestData(_ path: String, userToken: SwiftRmToken) async throws -> Data {
-        let (data, http) = try await rawData(path, userToken: userToken)
+    public static func requestData(_ path: String, userToken: SwiftRmToken, filename: String? = nil) async throws -> Data {
+        let (data, http) = try await rawData(path, userToken: userToken, filename: filename)
         guard http.statusCode == 200 else { throw SwiftRmError.invalidResponse }
         return data
     }

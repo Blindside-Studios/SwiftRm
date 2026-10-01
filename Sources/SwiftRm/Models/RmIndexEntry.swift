@@ -11,4 +11,8 @@ public struct RmIndexEntry: Sendable {
     let filename: String
     let subfiles: Int
     let size: Int
+
+    static let rootFilename = "root.docSchema"
+
+    var schemaFilename: String { filename + ".docSchema" }
 }

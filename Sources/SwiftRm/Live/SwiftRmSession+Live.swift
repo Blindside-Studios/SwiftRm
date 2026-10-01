@@ -16,17 +16,17 @@ extension SwiftRmSession {
         let userToken = try await SwiftRmToken(config: config)
 
         return SwiftRmSession (
-            fetchMetadata: { hash in
-                try await SwiftRmNetwork.request(config.blobUrl + hash, userToken: userToken)
+            fetchMetadata: { hash, filename in
+                try await SwiftRmNetwork.request(config.blobUrl + hash, userToken: userToken, filename: filename)
             },
-            fetchIndex: { hash in
-                try await fetchIndex(hash: hash, userToken: userToken, config: config)
+            fetchIndex: { hash, filename in
+                try await fetchIndex(hash: hash, filename: filename, userToken: userToken, config: config)
             },
-            fetchBlobText: { hash in
-                try await SwiftRmNetwork.requestText(config.blobUrl + hash, userToken: userToken)
+            fetchBlobText: { hash, filename in
+                try await SwiftRmNetwork.requestText(config.blobUrl + hash, userToken: userToken, filename: filename)
             },
-            downloadBlob: { hash in
-                try await SwiftRmNetwork.requestData(config.blobUrl + hash, userToken: userToken)
+            downloadBlob: { hash, filename in
+                try await SwiftRmNetwork.requestData(config.blobUrl + hash, userToken: userToken, filename: filename)
             },
             deleteSomething: { _ in },
             moveItem: { uuid, newParentUUID in
@@ -54,14 +54,14 @@ extension SwiftRmSession {
 
     // MARK: - Index parsing
 
-    private static func fetchIndex(hash: String, userToken: SwiftRmToken, config: RemarkableConfig) async throws -> [RmIndexEntry] {
-        let (entries, _) = try await fetchSchemaAndIndex(hash: hash, userToken: userToken, config: config)
+    private static func fetchIndex(hash: String, filename: String, userToken: SwiftRmToken, config: RemarkableConfig) async throws -> [RmIndexEntry] {
+        let (entries, _) = try await fetchSchemaAndIndex(hash: hash, filename: filename, userToken: userToken, config: config)
         return entries
     }
 
     /// Returns the parsed entries and the schema version string from the index file header.
-    private static func fetchSchemaAndIndex(hash: String, userToken: SwiftRmToken, config: RemarkableConfig) async throws -> ([RmIndexEntry], String) {
-        let text: String = try await SwiftRmNetwork.requestText(config.blobUrl + hash, userToken: userToken)
+    private static func fetchSchemaAndIndex(hash: String, filename: String, userToken: SwiftRmToken, config: RemarkableConfig) async throws -> ([RmIndexEntry], String) {
+        let text: String = try await SwiftRmNetwork.requestText(config.blobUrl + hash, userToken: userToken, filename: filename)
 
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard !lines.isEmpty else { return ([], "4") }
@@ -91,7 +91,7 @@ extension SwiftRmSession {
 
     private static func loadItems(userToken: SwiftRmToken, config: RemarkableConfig) async throws -> [RmItem] {
         let (rootHash, _) = try await getRootHashAndGeneration(userToken: userToken, config: config)
-        let rootIndex = try await fetchIndex(hash: rootHash, userToken: userToken, config: config)
+        let rootIndex = try await fetchIndex(hash: rootHash, filename: RmIndexEntry.rootFilename, userToken: userToken, config: config)
 
         return try await withThrowingTaskGroup(of: RmItem?.self) { group in
             var active = 0
@@ -115,11 +115,11 @@ extension SwiftRmSession {
     }
 
     private static func fetchItem(entry: RmIndexEntry, userToken: SwiftRmToken, config: RemarkableConfig) async throws -> RmItem? {
-        let subIndex = try await fetchIndex(hash: entry.hash, userToken: userToken, config: config)
+        let subIndex = try await fetchIndex(hash: entry.hash, filename: entry.schemaFilename, userToken: userToken, config: config)
         guard let metaFile = subIndex.first(where: { $0.filename.hasSuffix(".metadata") }) else {
             return nil
         }
-        var metadata: RmItem = try await SwiftRmNetwork.request(config.blobUrl + metaFile.hash, userToken: userToken)
+        var metadata: RmItem = try await SwiftRmNetwork.request(config.blobUrl + metaFile.hash, userToken: userToken, filename: metaFile.filename)
         let uuid = metaFile.filename.replacingOccurrences(of: ".metadata", with: "")
         metadata.hash = uuid
         return metadata
@@ -197,17 +197,17 @@ extension SwiftRmSession {
 
     private static func moveItem(uuid: String, newParentUUID: String, userToken: SwiftRmToken, config: RemarkableConfig) async throws {
         let (currentRootHash, _) = try await getRootHashAndGeneration(userToken: userToken, config: config)
-        let currentRootIndex = try await fetchIndex(hash: currentRootHash, userToken: userToken, config: config)
+        let currentRootIndex = try await fetchIndex(hash: currentRootHash, filename: RmIndexEntry.rootFilename, userToken: userToken, config: config)
         guard let docEntry = currentRootIndex.first(where: { $0.filename == uuid }) else {
             throw SwiftRmError.notFound
         }
 
-        let subIndex = try await fetchIndex(hash: docEntry.hash, userToken: userToken, config: config)
+        let subIndex = try await fetchIndex(hash: docEntry.hash, filename: docEntry.schemaFilename, userToken: userToken, config: config)
         guard let metaEntry = subIndex.first(where: { $0.filename.hasSuffix(".metadata") }) else {
             throw SwiftRmError.metaDataNotFound
         }
 
-        var metadata: RmMetadata = try await SwiftRmNetwork.request(config.blobUrl + metaEntry.hash, userToken: userToken)
+        var metadata: RmMetadata = try await SwiftRmNetwork.request(config.blobUrl + metaEntry.hash, userToken: userToken, filename: metaEntry.filename)
         metadata.parent = newParentUUID
         metadata.version += 1
         metadata.lastModified = String(Int64(Date().timeIntervalSince1970 * 1000))
@@ -239,7 +239,7 @@ extension SwiftRmSession {
         )
 
         let (rootHash, generation) = try await getRootHashAndGeneration(userToken: userToken, config: config)
-        let rootIndex = try await fetchIndex(hash: rootHash, userToken: userToken, config: config)
+        let rootIndex = try await fetchIndex(hash: rootHash, filename: RmIndexEntry.rootFilename, userToken: userToken, config: config)
 
         let updatedRootIndex = rootIndex.map { entry -> RmIndexEntry in
             entry.filename == uuid
@@ -250,7 +250,7 @@ extension SwiftRmSession {
 
         try await SwiftRmNetwork.uploadBlob(
             config.blobUrl + newRootHash,
-            filename: "root.docSchema",
+            filename: RmIndexEntry.rootFilename,
             body: rootIndexData,
             userToken: userToken
         )
@@ -306,7 +306,7 @@ extension SwiftRmSession {
         )
 
         let (rootHash, generation) = try await getRootHashAndGeneration(userToken: userToken, config: config)
-        let rootIndex = try await fetchIndex(hash: rootHash, userToken: userToken, config: config)
+        let rootIndex = try await fetchIndex(hash: rootHash, filename: RmIndexEntry.rootFilename, userToken: userToken, config: config)
 
         var newRootEntries = rootIndex
         let totalSize = blobs.reduce(0) { $0 + $1.data.count }
@@ -316,7 +316,7 @@ extension SwiftRmSession {
 
         try await SwiftRmNetwork.uploadBlob(
             config.blobUrl + newRootHash,
-            filename: "root.docSchema",
+            filename: RmIndexEntry.rootFilename,
             body: rootIndexData,
             userToken: userToken
         )

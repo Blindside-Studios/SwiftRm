@@ -58,7 +58,7 @@ class SwiftRmCache {
         }
         
         
-        let rootIndex = try await session.fetchIndex(rootHash)
+        let rootIndex = try await session.fetchIndex(rootHash, RmIndexEntry.rootFilename)
         let cachedItems = try load()
         
         

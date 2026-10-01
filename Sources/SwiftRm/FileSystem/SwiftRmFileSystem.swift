@@ -104,7 +104,7 @@ public class SwiftRmFileSystem{
 
         for entry in subIndex {
             if entry.filename.hasSuffix(".metadata") || entry.filename.hasSuffix(".content") {
-                let raw = try await session.fetchBlobText(entry.hash)
+                let raw = try await session.fetchBlobText(entry.hash, entry.filename)
                 results.append((name: entry.filename, content: raw))
             }
         }
@@ -116,7 +116,7 @@ public class SwiftRmFileSystem{
         guard let pdfEntry = subIndex.first(where: { $0.filename.hasSuffix(".pdf") || $0.filename.hasSuffix(".epub") }) else {
             throw SwiftRmError.notFound
         }
-        return try await session.downloadBlob(pdfEntry.hash)
+        return try await session.downloadBlob(pdfEntry.hash, pdfEntry.filename)
     }
 
     public func downloadNotebookPages(_ doc: RmDocument) async throws -> [RmFile] {
@@ -125,7 +125,7 @@ public class SwiftRmFileSystem{
         return try await withThrowingTaskGroup(of: RmFile.self) { group in
             for entry in rmEntries {
                 group.addTask { [session] in
-                    let data = try await session.downloadBlob(entry.hash)
+                    let data = try await session.downloadBlob(entry.hash, entry.filename)
                     return try RmFileParser.parse(data)
                 }
             }
@@ -145,11 +145,11 @@ public class SwiftRmFileSystem{
 
     private func resolveDocument(_ doc: RmDocument) async throws -> (RmIndexEntry, [RmIndexEntry]) {
         let rootHash = try await session.getRootHash()
-        let rootIndex = try await session.fetchIndex(rootHash)
+        let rootIndex = try await session.fetchIndex(rootHash, RmIndexEntry.rootFilename)
         guard let rootEntry = rootIndex.first(where: { $0.filename == doc.hash }) else {
             throw SwiftRmError.notFound
         }
-        let subIndex = try await session.fetchIndex(rootEntry.hash)
+        let subIndex = try await session.fetchIndex(rootEntry.hash, rootEntry.schemaFilename)
         return (rootEntry, subIndex)
     }
 
