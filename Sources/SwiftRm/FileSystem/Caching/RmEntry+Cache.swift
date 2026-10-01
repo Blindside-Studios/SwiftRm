@@ -16,14 +16,16 @@ class RmEntry {
      public var type: String        // "CollectionType" or "DocumentType"
      public var parent: String?
      public var lastModified: String?
+    public var pinned: Bool = false
     
-    init(uuid: String, contentHash: String, type: String, visibleName: String, parent: String?, lastModified: String?) {
+    init(uuid: String, contentHash: String, type: String, visibleName: String, parent: String?, lastModified: String?, pinned: Bool) {
         self.uuid = uuid
         self.contentHash = contentHash
         self.type = type
         self.visibleName = visibleName
         self.parent = parent
         self.lastModified = lastModified
+        self.pinned = pinned
     }
     
 }

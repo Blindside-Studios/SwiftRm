@@ -16,15 +16,16 @@ public class SwiftRmFileSystem{
     public var syncing: Bool { syncingCount > 0 }
 
     public let session: SwiftRmSession
-    public let root =  RmFolder(hash: "", visibleName: "My files", parent: nil)
-    public let trash =  RmFolder(hash: "trash", visibleName: "Trash", parent: "")
+    public let root =  RmFolder(hash: "", visibleName: "My files", parent: nil, pinned: false)
+    public let trash =  RmFolder(hash: "trash", visibleName: "Trash", parent: "", pinned: false)
     public var items: [RmItem] = []
 
     init(session: SwiftRmSession) throws{
         self.session = session
         Task{
             loading = true
-            try await loadFiles()
+            do { try await loadFiles() }
+            catch { Log.msg("loadFiles failed: \(error)", level: .error) }
             loading = false
         }
     }
@@ -71,7 +72,7 @@ public class SwiftRmFileSystem{
     }
 
     public func upload(name: String, data: Data, to parent: RmFolder) {
-        let placeholder = RmDocument(hash: UUID().uuidString.lowercased(), visibleName: name, parent: parent.hash, lastModified: String(Int64(Date().timeIntervalSince1970 * 1000)))
+        let placeholder = RmDocument(hash: UUID().uuidString.lowercased(), visibleName: name, parent: parent.hash, lastModified: String(Int64(Date().timeIntervalSince1970 * 1000)), pinned: false)
         parent.documents.append(placeholder)
 
         let parentHash = parent.hash
@@ -82,7 +83,7 @@ public class SwiftRmFileSystem{
     }
 
     public func createFolder(name: String, in parent: RmFolder) {
-        let placeholder = RmFolder(hash: UUID().uuidString.lowercased(), visibleName: name, parent: parent.hash)
+        let placeholder = RmFolder(hash: UUID().uuidString.lowercased(), visibleName: name, parent: parent.hash, pinned: false)
         parent.folders.append(placeholder)
 
         let parentHash = parent.hash
@@ -165,12 +166,12 @@ public class SwiftRmFileSystem{
           ]
 
         for item in items where item.isFolder {
-            let folder = RmFolder(hash: item.hash ?? "", visibleName: item.visibleName, parent: item.parent)
+            let folder = RmFolder(hash: item.hash ?? "", visibleName: item.visibleName, parent: item.parent, pinned: item.pinned)
             folderMap[item.hash ?? ""] = folder
         }
 
         for item in items where item.isDocument {
-            let doc = RmDocument(hash: item.hash ?? "", visibleName: item.visibleName, parent: item.parent, lastModified: item.lastModified)
+            let doc = RmDocument(hash: item.hash ?? "", visibleName: item.visibleName, parent: item.parent, lastModified: item.lastModified, pinned: item.pinned)
             let parentFolder = folderMap[item.parent ?? ""] ?? root
             parentFolder.documents.append(doc)
         }

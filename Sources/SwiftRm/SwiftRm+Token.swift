@@ -32,7 +32,10 @@ actor SwiftRmToken {
         let parts = token.split(separator: ".")
         guard parts.count == 3 else { return true }
 
+        // JWT payloads are base64url: map back to standard base64 before decoding.
         var base64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
         let remainder = base64.count % 4
         if remainder > 0 {
             base64 += String(repeating: "=", count: 4 - remainder)

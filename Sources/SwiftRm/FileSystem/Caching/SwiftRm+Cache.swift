@@ -108,6 +108,7 @@ class SwiftRmCache {
         entry.parent = metadata.parent
         entry.lastModified = metadata.lastModified
         entry.type = metadata.type
+        entry.pinned = metadata.pinned
         
         try context.save()
         return entry
@@ -125,7 +126,8 @@ class SwiftRmCache {
             contentHash: index.hash,
             type: metadata.type, visibleName: metadata.visibleName,
             parent: metadata.parent,
-            lastModified: metadata.lastModified
+            lastModified: metadata.lastModified,
+            pinned: metadata.pinned
         )
         
         context.insert(newItem)
@@ -149,7 +151,8 @@ class SwiftRmCache {
                 visibleName: $0.visibleName,
                 type: $0.type,
                 parent: $0.parent,
-                lastModified: $0.lastModified
+                lastModified: $0.lastModified,
+                pinned: $0.pinned
             )
         }
     }

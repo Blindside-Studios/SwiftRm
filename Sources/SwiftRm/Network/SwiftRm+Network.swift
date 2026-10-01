@@ -10,15 +10,32 @@ import CryptoKit
 
 struct SwiftRmNetwork{
 
+    private static let maxAttempts = 3
+    private static let transientErrors: Set<URLError.Code> = [.timedOut, .networkConnectionLost, .cannotConnectToHost]
+
+    /// GETs are retried with backoff on timeouts, dropped connections, 429 and 5xx.
     private static func rawData(_ path: String, userToken: SwiftRmToken, method: String = "GET", filename: String? = nil) async throws -> (Data, HTTPURLResponse) {
-        let token = try await userToken.validToken()
-        var request = URLRequest(url: URL(string: path)!)
-        request.httpMethod = method
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if let filename { request.setValue(filename, forHTTPHeaderField: "rm-filename") }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw SwiftRmError.invalidResponse }
-        return (data, http)
+        var attempt = 1
+        while true {
+            let canRetry = method == "GET" && attempt < maxAttempts
+            do {
+                let token = try await userToken.validToken()
+                var request = URLRequest(url: URL(string: path)!, timeoutInterval: 20)
+                request.httpMethod = method
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                if let filename { request.setValue(filename, forHTTPHeaderField: "rm-filename") }
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse else { throw SwiftRmError.invalidResponse }
+                guard canRetry, http.statusCode == 429 || (500...599).contains(http.statusCode) else {
+                    return (data, http)
+                }
+                Log.msg("rawData: \(path.suffix(40)) → HTTP \(http.statusCode), retrying (\(attempt)/\(maxAttempts))", level: .error)
+            } catch let error as URLError where canRetry && transientErrors.contains(error.code) {
+                Log.msg("rawData: \(path.suffix(40)) → \(error.code.rawValue), retrying (\(attempt)/\(maxAttempts))", level: .error)
+            }
+            try await Task.sleep(for: .seconds(1 << (attempt - 1)))
+            attempt += 1
+        }
     }
 
     public static func request<T: Decodable>(_ path: String, userToken: SwiftRmToken, method: String = "GET", filename: String? = nil) async throws -> T {

@@ -22,11 +22,13 @@ public class RmFolder: Identifiable, Equatable, Hashable {
     public let parent: String?
     public var documents: [RmDocument] = []
     public var folders: [RmFolder] = []
+    public var pinned: Bool
     
-    init(hash: String, visibleName: String, parent: String?) {
+    init(hash: String, visibleName: String, parent: String?, pinned: Bool) {
         self.hash = hash
         self.visibleName = visibleName
         self.parent = parent
+        self.pinned = pinned
     }
 }
 
