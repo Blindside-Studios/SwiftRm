@@ -122,18 +122,42 @@ public class SwiftRmFileSystem{
 
     public func downloadNotebookPages(_ doc: RmDocument) async throws -> [RmFile] {
         let (_, subIndex) = try await resolveDocument(doc)
+
+        // read correct page order from the .content file
+        var order: [String] = []
+        if let c = subIndex.first(where: { $0.filename.hasSuffix(".content") }) {
+            let data = try await session.downloadBlob(c.hash, c.filename)
+            order = Self.pageOrder(from: data)
+        }
+
+        // download pages and remember UUIDs
         let rmEntries = subIndex.filter { $0.filename.hasSuffix(".rm") }
-        return try await withThrowingTaskGroup(of: RmFile.self) { group in
+        let pages = try await withThrowingTaskGroup(of: (String, RmFile).self) { group in
             for entry in rmEntries {
+                let uuid = ((entry.filename as NSString).lastPathComponent as NSString).deletingPathExtension
                 group.addTask { [session] in
                     let data = try await session.downloadBlob(entry.hash, entry.filename)
-                    return try RmFileParser.parse(data)
+                    return (uuid, try RmFileParser.parse(data))
                 }
             }
-            var pages: [RmFile] = []
-            for try await page in group { pages.append(page) }
-            return pages
+            var result: [(String, RmFile)] = []
+            for try await p in group { result.append(p) }
+            return result
         }
+
+        // order according to list
+        return pages
+            .sorted { (order.firstIndex(of: $0.0) ?? .max) < (order.firstIndex(of: $1.0) ?? .max) }
+            .map(\.1)
+    }
+
+    private static func pageOrder(from data: Data) -> [String] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        if let ids = json["pages"] as? [String] { return ids }
+        if let c = json["cPages"] as? [String: Any], let pages = c["pages"] as? [[String: Any]] {
+            return pages.compactMap { $0["id"] as? String }
+        }
+        return []
     }
 
     public func documentType(_ doc: RmDocument) async throws -> String {
