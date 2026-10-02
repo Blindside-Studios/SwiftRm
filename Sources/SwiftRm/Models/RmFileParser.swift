@@ -41,10 +41,11 @@ public enum RmFileParser {
     private static let headerV3 = "reMarkable .lines file, version=3          "
     private static let headerV5 = "reMarkable .lines file, version=5          "
     private static let headerV6 = "reMarkable .lines file, version=6          "
-    private static let headerLenV3V5 = 43
-    private static let headerLenV6 = 44
+    private static let headerLen = 43
+    private static let headerLenV3V5 = headerLen
+    private static let headerLenV6 = headerLen //44
 
-    public static func parse(_ data: Data) throws -> RmFile {
+    /*public static func parse(_ data: Data) throws -> RmFile {
         guard data.count >= headerLenV6 else {
             guard data.count >= headerLenV3V5 else { throw RmParseError.tooShort }
             return try parseV3V5(data)
@@ -54,6 +55,13 @@ public enum RmFileParser {
         if h6 == headerV6 {
             return try parseV6(data)
         }
+        return try parseV3V5(data)
+    }*/
+    
+    public static func parse(_ data: Data) throws -> RmFile {
+        guard data.count >= headerLen else { throw RmParseError.tooShort }
+        let header = String(data: data[0..<headerLen], encoding: .ascii) ?? ""
+        if header == headerV6 { return try parseV6(data) }
         return try parseV3V5(data)
     }
 
@@ -200,7 +208,7 @@ public enum RmFileParser {
         var points: [RmPoint] = []
 
         for _ in 0..<numPoints {
-            let x = try readFloat32(data, &offset)
+            let x = try readFloat32(data, &offset) + deviceWidth / 2
             let y = try readFloat32(data, &offset)
 
             let speed: Float32
@@ -284,28 +292,28 @@ public enum RmFileParser {
 
     private static func readUInt16(_ data: Data, _ offset: inout Int) throws -> UInt16 {
         guard offset + 2 <= data.count else { throw RmParseError.tooShort }
-        let value = data[offset..<offset+2].withUnsafeBytes { $0.load(as: UInt16.self) }
+        let value = data[offset..<offset+2].withUnsafeBytes { $0.loadUnaligned(as: UInt16.self) }
         offset += 2
         return UInt16(littleEndian: value)
     }
 
     private static func readUInt32(_ data: Data, _ offset: inout Int) throws -> UInt32 {
         guard offset + 4 <= data.count else { throw RmParseError.tooShort }
-        let value = data[offset..<offset+4].withUnsafeBytes { $0.load(as: UInt32.self) }
+        let value = data[offset..<offset+4].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
         offset += 4
         return UInt32(littleEndian: value)
     }
 
     private static func readFloat32(_ data: Data, _ offset: inout Int) throws -> Float32 {
         guard offset + 4 <= data.count else { throw RmParseError.tooShort }
-        let bits = data[offset..<offset+4].withUnsafeBytes { $0.load(as: UInt32.self) }
+        let bits = data[offset..<offset+4].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
         offset += 4
         return Float32(bitPattern: UInt32(littleEndian: bits))
     }
 
     private static func readFloat64(_ data: Data, _ offset: inout Int) throws -> Float64 {
         guard offset + 8 <= data.count else { throw RmParseError.tooShort }
-        let bits = data[offset..<offset+8].withUnsafeBytes { $0.load(as: UInt64.self) }
+        let bits = data[offset..<offset+8].withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) }
         offset += 8
         return Float64(bitPattern: UInt64(littleEndian: bits))
     }
