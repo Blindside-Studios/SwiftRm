@@ -34,6 +34,11 @@ public class SwiftRmFileSystem{
         self.items = try await SwiftRmCache(session: session).loadItems()
         try await buildTree()
     }
+    
+    public func rebuildCache() async throws {
+        self.items = try await SwiftRmCache(session: session).rebuildCache()
+        try await buildTree()
+    }
 
     private func withSync(_ work: @escaping @Sendable () async throws -> Void) {
         syncingCount += 1

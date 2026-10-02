@@ -12,6 +12,7 @@ import SwiftData
 class SwiftRmCache {
     private let container: ModelContainer
     private let context: ModelContext
+    private static var refreshTask: Task<[RmItem], Error>?
     
     public let session: SwiftRmSession
     
@@ -49,53 +50,112 @@ class SwiftRmCache {
     }
     
     func loadItems() async throws -> [RmItem] {
-        let rootHash = try await session.getRootHash()
-        let cachedHash = RmRootCache.getRootHashCache()
-        
-        if rootHash == cachedHash {
-            Log.msg("Cache is up to date")
-            return mapEntriesToItems(entries: try load())
-        }
-        
-        
-        let rootIndex = try await session.fetchIndex(rootHash, RmIndexEntry.rootFilename)
-        let cachedItems = try load()
-        
-        
-        var cacheMap: [String: RmEntry] = Dictionary(
-            uniqueKeysWithValues: cachedItems.map { ($0.uuid, $0) }
-        )
-        
-        var syncedItems: [RmEntry] = []
-        
-        for indexItem in rootIndex {
-            let uuid = indexItem.filename.replacingOccurrences(of: ".metadata", with: "")
-            
-            if let cached = cacheMap[uuid] {
+        if SwiftRmCache.refreshTask == nil {
+            let softRefreshTask = Task{
+                let rootHash = try await session.getRootHash()
+                let cachedHash = RmRootCache.getRootHashCache()
                 
-                if cached.contentHash == indexItem.hash {
-                    syncedItems.append(cached)
+                if rootHash == cachedHash {
+                    Log.msg("Cache is up to date")
+                    return mapEntriesToItems(entries: try load())
                 } else {
-                    
-                    Log.msg("Updating item \(uuid)")
-                    let updated = try await updateItem(cached, with: indexItem)
-                    syncedItems.append(updated)
+                    RmRootCache.setRootHashCache(hash: "Invalid hash - refresh running")
                 }
                 
-                cacheMap.removeValue(forKey: uuid)
+                let rootIndex = try await session.fetchIndex(rootHash, RmIndexEntry.rootFilename)
+                let cachedItems = try load()
                 
-            } else {
+                var cacheMap: [String: RmEntry] = Dictionary(
+                    cachedItems.map { ($0.uuid, $0) }, uniquingKeysWith: { _, new in new }
+                )
+                
+                var syncedItems: [RmEntry] = []
+                
+                for indexItem in rootIndex {
+                    try Task.checkCancellation()
+                    
+                    let uuid = indexItem.filename.replacingOccurrences(of: ".metadata", with: "")
+                    
+                    if let cached = cacheMap[uuid] {
+                        
+                        if cached.contentHash == indexItem.hash {
+                            syncedItems.append(cached)
+                        } else {
+                            
+                            Log.msg("Updating item \(uuid)")
+                            let updated = try await updateItem(cached, with: indexItem)
+                            syncedItems.append(updated)
+                        }
+                        
+                        cacheMap.removeValue(forKey: uuid)
+                        
+                    } else {
+                        Log.msg("Download new Item \(uuid)")
+                        let newItem = try await saveNewItemByHash(index: indexItem)
+                        syncedItems.append(newItem)
+                    }
+                }
+                
+                try Task.checkCancellation()
+                
+                try cleanUpCache(deadEntries: Array(cacheMap.values))
+                
+                RmRootCache.setRootHashCache(hash: rootHash)
+                
+                return mapEntriesToItems(entries: syncedItems)
+            }
+            
+            // free up task and return result
+            do{
+                if SwiftRmCache.refreshTask == softRefreshTask { SwiftRmCache.refreshTask = nil }
+                return try await softRefreshTask.value
+            } catch {
+                if SwiftRmCache.refreshTask == softRefreshTask { SwiftRmCache.refreshTask = nil }
+                return [] // task failed
+            }
+        } else {
+            return [] // task did not run
+        }
+    }
+    
+    func rebuildCache() async throws -> [RmItem]{
+        if SwiftRmCache.refreshTask == nil { SwiftRmCache.refreshTask?.cancel() }
+        let hardRefreshTask = Task{
+            RmRootCache.setRootHashCache(hash: "Invalid hash - refresh running")
+            let cachedItems = try load()
+            try cleanUpCache(deadEntries: cachedItems)
+            
+            let rootHash = try await session.getRootHash()
+            
+            let rootIndex = try await session.fetchIndex(rootHash, RmIndexEntry.rootFilename)
+            
+            var syncedItems: [RmEntry] = []
+            
+            for indexItem in rootIndex {
+                try Task.checkCancellation()
+                
+                let uuid = indexItem.filename.replacingOccurrences(of: ".metadata", with: "")
+                
+                
                 Log.msg("Download new Item \(uuid)")
                 let newItem = try await saveNewItemByHash(index: indexItem)
                 syncedItems.append(newItem)
             }
+            
+            try Task.checkCancellation()
+                        
+            RmRootCache.setRootHashCache(hash: rootHash)
+            
+            return mapEntriesToItems(entries: syncedItems)
         }
         
-        try cleanUpCache(deadEntries: Array(cacheMap.values))
-        
-        RmRootCache.setRootHashCache(hash: rootHash)
-        
-        return mapEntriesToItems(entries: syncedItems)
+        do{
+            if SwiftRmCache.refreshTask == hardRefreshTask { SwiftRmCache.refreshTask = nil }
+            return try await hardRefreshTask.value
+        } catch {
+            if SwiftRmCache.refreshTask == hardRefreshTask { SwiftRmCache.refreshTask = nil }
+            return [] // task failed
+        }
     }
     
     func updateItem(_ entry: RmEntry, with index: RmIndexEntry) async throws -> RmEntry {
