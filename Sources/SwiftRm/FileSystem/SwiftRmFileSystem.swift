@@ -19,6 +19,13 @@ public class SwiftRmFileSystem{
     public let root =  RmFolder(hash: "", visibleName: "My files", parent: nil, pinned: false)
     public let trash =  RmFolder(hash: "trash", visibleName: "Trash", parent: "", pinned: false)
     public var items: [RmItem] = []
+    
+    public var pinnedFiles: [RmDocument] {
+        self.root.allDocuments.filter(\.pinned)
+    }
+    public var pinnedFolders: [RmFolder] {
+        self.root.allFolders.filter(\.pinned)
+    }
 
     init(session: SwiftRmSession) throws{
         self.session = session

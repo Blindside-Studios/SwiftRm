@@ -24,6 +24,9 @@ public class RmFolder: Identifiable, Equatable, Hashable {
     public var folders: [RmFolder] = []
     public var pinned: Bool
     
+    internal var allFolders: [RmFolder] { folders.flatMap { [$0] + $0.allFolders } }
+    internal var allDocuments: [RmDocument] { documents + folders.flatMap(\.allDocuments) }
+    
     init(hash: String, visibleName: String, parent: String?, pinned: Bool) {
         self.hash = hash
         self.visibleName = visibleName
